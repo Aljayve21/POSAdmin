@@ -1,98 +1,150 @@
-import { productsData } from "../../data/mockData";
+import api from "../../api/axios";
 import { Edit, Plus, Search, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
 
 const emptyForm = {
     name: "",
     category: "",
     price: "",
-    image: "",
+    image_path: "",
     stock: "",
     reorder_level: "",
 };
 
 export default function Products() {
-    const [products, setProducts] = useState(productsData);
+    const [products, setProducts] = useState([]);
     const [search, setSearch] = useState("");
+    const [loading, setLoading] = useState(true);
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [form, setForm] = useState(emptyForm);
 
-    // FILTER
+    useEffect(() => {
+        fetchProducts();
+    }, []);
+
+    const fetchProducts = async () => {
+        try {
+            const res = await api.get("/products");
+            setProducts(res.data);
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to load products");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const filteredProducts = useMemo(() => {
-        return products.filter(
-            (p) =>
-                p.name.toLowerCase().includes(search.toLowerCase()) ||
-                p.category.toLowerCase().includes(search.toLowerCase())
-        );
+        return products.filter((p) => {
+            const name = p.name || "";
+            const category = p.category || "";
+
+            return (
+                name.toLowerCase().includes(search.toLowerCase()) ||
+                category.toLowerCase().includes(search.toLowerCase())
+            );
+        });
     }, [products, search]);
 
-    // OPEN ADD
     const openAddModal = () => {
         setEditingProduct(null);
         setForm(emptyForm);
         setModalOpen(true);
     };
 
-    // OPEN EDIT
     const openEditModal = (product) => {
         setEditingProduct(product);
-        setForm(product);
+        setForm({
+            name: product.name || "",
+            category: product.category || "",
+            price: product.price || "",
+            image_path: product.image_path || "",
+            stock: product.stock || "",
+            reorder_level: product.reorder_level || "",
+        });
         setModalOpen(true);
     };
 
-    // CLOSE
     const closeModal = () => {
         setModalOpen(false);
         setEditingProduct(null);
         setForm(emptyForm);
     };
 
-    // HANDLE INPUT
     const handleChange = (field, value) => {
         setForm((prev) => ({ ...prev, [field]: value }));
     };
 
-    // SAVE
-    const handleSave = (e) => {
+    const handleSave = async (e) => {
         e.preventDefault();
 
-        if (!form.name) return;
-
-        if (editingProduct) {
-            setProducts((prev) =>
-                prev.map((p) =>
-                    p.id === editingProduct.id ? { ...p, ...form } : p
-                )
-            );
-        } else {
-            setProducts((prev) => [
-                {
-                    id: Date.now(),
-                    ...form,
-                    price: Number(form.price),
-                    stock: Number(form.stock),
-                    reorder_level: Number(form.reorder_level),
-                },
-                ...prev,
-            ]);
+        if (!form.name.trim()) {
+            toast.error("Product name is required");
+            return;
         }
 
-        closeModal();
+        if (!form.category.trim()) {
+            toast.error("Category is required");
+            return;
+        }
+
+        const loadingToast = toast.loading(
+            editingProduct ? "Updating product..." : "Adding product..."
+        );
+
+        try {
+            const payload = {
+                name: form.name,
+                category: form.category,
+                price: Number(form.price || 0),
+                image_path: form.image_path,
+                stock: Number(form.stock || 0),
+                reorder_level: Number(form.reorder_level || 0),
+            };
+
+            if (editingProduct) {
+                await api.put(`/products/${editingProduct.id}`, payload);
+                toast.success("Product updated successfully", { id: loadingToast });
+            } else {
+                await api.post("/products", payload);
+                toast.success("Product added successfully", { id: loadingToast });
+            }
+
+            await fetchProducts();
+            closeModal();
+        } catch (err) {
+            console.error(err);
+            toast.error(err.response?.data?.error || "Something went wrong", {
+                id: loadingToast,
+            });
+        }
     };
 
-    // DELETE
-    const handleDelete = (id) => {
+    const handleDelete = async (id) => {
         if (!confirm("Delete product?")) return;
-        setProducts((prev) => prev.filter((p) => p.id !== id));
+
+        const loadingToast = toast.loading("Deleting product...");
+
+        try {
+            await api.delete(`/products/${id}`);
+            toast.success("Product deleted successfully", { id: loadingToast });
+            await fetchProducts();
+        } catch (err) {
+            console.error(err);
+            toast.error(err.response?.data?.error || "Delete failed", {
+                id: loadingToast,
+            });
+        }
     };
+
+    if (loading) return <p className="p-6">Loading products...</p>;
 
     return (
         <div className="space-y-4 sm:space-y-6">
-
-            {/* HEADER */}
-            <div className="flex justify-between items-center">
+            <div className="flex items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold dark:text-white">Products</h1>
                     <p className="text-sm text-slate-500">Manage your products</p>
@@ -100,26 +152,24 @@ export default function Products() {
 
                 <button
                     onClick={openAddModal}
-                    className="bg-indigo-600 text-white px-4 py-2 rounded-xl flex gap-2 items-center"
+                    className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-white"
                 >
                     <Plus size={16} />
                     Add Product
                 </button>
             </div>
 
-            {/* SEARCH */}
-            <div className="flex items-center gap-2 border px-3 py-2 rounded-xl dark:border-slate-700">
+            <div className="flex items-center gap-2 rounded-xl border px-3 py-2 dark:border-slate-700">
                 <Search size={16} />
                 <input
                     placeholder="Search..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="w-full bg-transparent outline-none text-sm"
+                    className="w-full bg-transparent text-sm outline-none"
                 />
             </div>
 
-            {/* TABLE */}
-            <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 p-4 rounded-xl">
+            <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[700px] text-xs sm:text-sm">
                         <thead>
@@ -138,18 +188,19 @@ export default function Products() {
                                     <td className="py-2">
                                         <div className="flex items-center gap-2">
                                             <img
-                                                src={p.image || "https://via.placeholder.com/80"}
+                                                src={p.image_path || "https://via.placeholder.com/80"}
                                                 className="h-10 w-10 rounded object-cover"
+                                                alt={p.name}
                                             />
                                             {p.name}
                                         </div>
                                     </td>
                                     <td>{p.category}</td>
-                                    <td>₱{p.price}</td>
+                                    <td>₱{Number(p.price || 0).toLocaleString()}</td>
                                     <td>{p.stock}</td>
 
                                     <td className="text-right">
-                                        <div className="flex justify-end gap-1">
+                                        <div className="flex justify-end gap-2">
                                             <button onClick={() => openEditModal(p)}>
                                                 <Edit size={16} />
                                             </button>
@@ -160,12 +211,19 @@ export default function Products() {
                                     </td>
                                 </tr>
                             ))}
+
+                            {filteredProducts.length === 0 && (
+                                <tr>
+                                    <td colSpan="5" className="py-6 text-center text-slate-500">
+                                        No products found.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {/* MODAL */}
             {modalOpen && (
                 <ProductModal
                     form={form}
@@ -179,32 +237,32 @@ export default function Products() {
     );
 }
 
-// ================= MODAL =================
-
 function ProductModal({ form, onChange, onClose, onSave, editing }) {
-
     const handleImageUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         const reader = new FileReader();
+
         reader.onloadend = () => {
-            onChange("image", reader.result);
+            onChange("image_path", reader.result);
         };
+
         reader.readAsDataURL(file);
     };
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/40 px-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 px-3 py-4">
             <form
                 onSubmit={onSave}
-                className="bg-white dark:bg-slate-900 p-4 rounded-xl w-full max-w-md space-y-3"
+                className="w-full max-w-md space-y-3 rounded-xl bg-white p-4 dark:bg-slate-900"
             >
                 <div className="flex justify-between">
-                    <h2 className="font-bold">
+                    <h2 className="font-bold dark:text-white">
                         {editing ? "Edit Product" : "Add Product"}
                     </h2>
-                    <button onClick={onClose}>
+
+                    <button type="button" onClick={onClose}>
                         <X size={16} />
                     </button>
                 </div>
@@ -213,14 +271,14 @@ function ProductModal({ form, onChange, onClose, onSave, editing }) {
                     placeholder="Product Name"
                     value={form.name}
                     onChange={(e) => onChange("name", e.target.value)}
-                    className="w-full border p-2 rounded"
+                    className="w-full rounded border p-2 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
 
                 <input
                     placeholder="Category"
                     value={form.category}
                     onChange={(e) => onChange("category", e.target.value)}
-                    className="w-full border p-2 rounded"
+                    className="w-full rounded border p-2 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
 
                 <input
@@ -228,7 +286,7 @@ function ProductModal({ form, onChange, onClose, onSave, editing }) {
                     placeholder="Price"
                     value={form.price}
                     onChange={(e) => onChange("price", e.target.value)}
-                    className="w-full border p-2 rounded"
+                    className="w-full rounded border p-2 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
 
                 <input
@@ -236,7 +294,7 @@ function ProductModal({ form, onChange, onClose, onSave, editing }) {
                     placeholder="Stock"
                     value={form.stock}
                     onChange={(e) => onChange("stock", e.target.value)}
-                    className="w-full border p-2 rounded"
+                    className="w-full rounded border p-2 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
 
                 <input
@@ -244,31 +302,36 @@ function ProductModal({ form, onChange, onClose, onSave, editing }) {
                     placeholder="Reorder Level"
                     value={form.reorder_level}
                     onChange={(e) => onChange("reorder_level", e.target.value)}
-                    className="w-full border p-2 rounded"
+                    className="w-full rounded border p-2 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
 
-                {/* IMAGE UPLOAD */}
                 <div>
-                    <label className="text-sm font-semibold">Product Image</label>
+                    <label className="text-sm font-semibold dark:text-white">
+                        Product Image
+                    </label>
 
                     <input
                         type="file"
                         accept="image/*"
                         onChange={handleImageUpload}
-                        className="mt-2 w-full text-sm"
+                        className="mt-2 w-full text-sm dark:text-white"
                     />
 
-                    {form.image && (
+                    {form.image_path && (
                         <img
-                            src={form.image}
-                            className="mt-2 h-20 w-20 object-cover rounded"
+                            src={form.image_path}
+                            className="mt-2 h-20 w-20 rounded object-cover"
+                            alt="Preview"
                         />
                     )}
                 </div>
 
                 <div className="flex justify-end gap-2">
-                    <button onClick={onClose}>Cancel</button>
-                    <button className="bg-indigo-600 text-white px-3 py-1 rounded">
+                    <button type="button" onClick={onClose}>
+                        Cancel
+                    </button>
+
+                    <button className="rounded bg-indigo-600 px-3 py-1 text-white">
                         Save
                     </button>
                 </div>
