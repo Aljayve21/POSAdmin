@@ -1,66 +1,157 @@
-import { businessSettings } from "../../data/mockData";
-import { useState } from "react";
+import api from "../../api/axios";
+import { getAdminSession, updateAdminSessionUser } from "../../utils/auth";
+import { useCallback, useEffect, useState } from "react";
+import toast from "react-hot-toast";
 
 export default function Profile() {
-    const [form, setForm] = useState({
-        business_name: businessSettings.business_name,
-        logo: businessSettings.logo,
-        address: businessSettings.address,
-        contact_number: businessSettings.contact_number,
-        admin_name: "Admin User",
-        email: "admin@email.com",
+    const session = getAdminSession();
+    const adminId = session?.user?.id;
+
+    const [loading, setLoading] = useState(true);
+    const [businessForm, setBusinessForm] = useState({
+        business_name: "",
+        logo_path: "",
+        address: "",
+        contact_number: "",
+    });
+    const [accountForm, setAccountForm] = useState({
+        name: "",
+        email: "",
+    });
+    const [passwordForm, setPasswordForm] = useState({
         current_password: "",
         new_password: "",
         confirm_password: "",
     });
+    const [savingBusiness, setSavingBusiness] = useState(false);
+    const [savingAccount, setSavingAccount] = useState(false);
+    const [savingPassword, setSavingPassword] = useState(false);
 
-    const handleChange = (key, value) => {
-        setForm((prev) => ({ ...prev, [key]: value }));
-    };
-
-    const handleLogoUpload = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-
-        reader.onloadend = () => {
-            handleChange("logo", reader.result);
-        };
-
-        reader.readAsDataURL(file);
-    };
-
-    const handleSaveBusiness = (e) => {
-        e.preventDefault();
-        console.log("Business saved:", form);
-        alert("Business profile updated. Mock only muna.");
-    };
-
-    const handleSaveAccount = (e) => {
-        e.preventDefault();
-        console.log("Account saved:", form);
-        alert("Admin account updated. Mock only muna.");
-    };
-
-    const handleChangePassword = (e) => {
-        e.preventDefault();
-
-        if (form.new_password !== form.confirm_password) {
-            alert("New password and confirm password do not match.");
+    const loadProfile = useCallback(async () => {
+        if (!adminId) {
+            toast.error("Admin session not found");
+            setLoading(false);
             return;
         }
 
-        console.log("Password changed mock");
-        alert("Password updated. Mock only muna.");
+        try {
+            const [businessRes, userRes] = await Promise.all([
+                api.get("/profile/business-settings"),
+                api.get(`/profile/users/${adminId}`),
+            ]);
 
-        setForm((prev) => ({
-            ...prev,
-            current_password: "",
-            new_password: "",
-            confirm_password: "",
-        }));
+            setBusinessForm({
+                business_name: businessRes.data.business_name || "",
+                logo_path: businessRes.data.logo_path || "",
+                address: businessRes.data.address || "",
+                contact_number: businessRes.data.contact_number || "",
+            });
+
+            setAccountForm({
+                name: userRes.data.name || "",
+                email: userRes.data.email || "",
+            });
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to load profile");
+        } finally {
+            setLoading(false);
+        }
+    }, [adminId]);
+
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            loadProfile();
+        }, 0);
+
+        return () => clearTimeout(timeoutId);
+    }, [loadProfile]);
+
+    const handleBusinessChange = (key, value) => {
+        setBusinessForm((prev) => ({ ...prev, [key]: value }));
     };
+
+    const handleAccountChange = (key, value) => {
+        setAccountForm((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const handlePasswordChange = (key, value) => {
+        setPasswordForm((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const handleLogoUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            handleBusinessChange("logo_path", reader.result);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleSaveBusiness = async (e) => {
+        e.preventDefault();
+
+        try {
+            setSavingBusiness(true);
+            await api.put("/profile/business-settings", businessForm);
+            toast.success("Business profile updated");
+        } catch (error) {
+            console.error(error);
+            toast.error(error.response?.data?.error || "Failed to update business profile");
+        } finally {
+            setSavingBusiness(false);
+        }
+    };
+
+    const handleSaveAccount = async (e) => {
+        e.preventDefault();
+
+        try {
+            setSavingAccount(true);
+            const res = await api.put(`/profile/users/${adminId}`, accountForm);
+            updateAdminSessionUser(res.data.user);
+            toast.success("Admin account updated");
+        } catch (error) {
+            console.error(error);
+            toast.error(error.response?.data?.error || "Failed to update account");
+        } finally {
+            setSavingAccount(false);
+        }
+    };
+
+    const handleChangePassword = async (e) => {
+        e.preventDefault();
+
+        if (passwordForm.new_password !== passwordForm.confirm_password) {
+            toast.error("New password and confirm password do not match");
+            return;
+        }
+
+        try {
+            setSavingPassword(true);
+            await api.put(`/profile/users/${adminId}/password`, {
+                current_password: passwordForm.current_password,
+                new_password: passwordForm.new_password,
+            });
+            toast.success("Password updated");
+            setPasswordForm({
+                current_password: "",
+                new_password: "",
+                confirm_password: "",
+            });
+        } catch (error) {
+            console.error(error);
+            toast.error(error.response?.data?.error || "Failed to update password");
+        } finally {
+            setSavingPassword(false);
+        }
+    };
+
+    if (loading) {
+        return <p className="p-6 dark:text-white">Loading profile...</p>;
+    }
 
     return (
         <div className="space-y-4 sm:space-y-6">
@@ -83,7 +174,7 @@ export default function Profile() {
 
                 <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center">
                     <img
-                        src={form.logo || "https://via.placeholder.com/120?text=LOGO"}
+                        src={businessForm.logo_path || "https://via.placeholder.com/120?text=LOGO"}
                         alt="Business Logo"
                         className="h-24 w-24 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
                     />
@@ -99,38 +190,34 @@ export default function Profile() {
                             onChange={handleLogoUpload}
                             className="w-full text-sm text-slate-600 file:mr-4 file:rounded-xl file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-indigo-700 dark:text-slate-300"
                         />
-
-                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                            PNG, JPG, or JPEG. Preview only muna habang mock data.
-                        </p>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Input
                         label="Business Name"
-                        value={form.business_name}
-                        onChange={(v) => handleChange("business_name", v)}
+                        value={businessForm.business_name}
+                        onChange={(v) => handleBusinessChange("business_name", v)}
                     />
 
                     <Input
                         label="Contact Number"
-                        value={form.contact_number}
-                        onChange={(v) => handleChange("contact_number", v)}
+                        value={businessForm.contact_number}
+                        onChange={(v) => handleBusinessChange("contact_number", v)}
                     />
 
                     <div className="md:col-span-2">
                         <Input
                             label="Address"
-                            value={form.address}
-                            onChange={(v) => handleChange("address", v)}
+                            value={businessForm.address}
+                            onChange={(v) => handleBusinessChange("address", v)}
                         />
                     </div>
                 </div>
 
                 <div className="mt-5 flex justify-end">
-                    <button className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700">
-                        Save Business Info
+                    <button disabled={savingBusiness} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70">
+                        {savingBusiness ? "Saving..." : "Save Business Info"}
                     </button>
                 </div>
             </form>
@@ -146,21 +233,21 @@ export default function Profile() {
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Input
                         label="Full Name"
-                        value={form.admin_name}
-                        onChange={(v) => handleChange("admin_name", v)}
+                        value={accountForm.name}
+                        onChange={(v) => handleAccountChange("name", v)}
                     />
 
                     <Input
                         label="Email"
                         type="email"
-                        value={form.email}
-                        onChange={(v) => handleChange("email", v)}
+                        value={accountForm.email}
+                        onChange={(v) => handleAccountChange("email", v)}
                     />
                 </div>
 
                 <div className="mt-5 flex justify-end">
-                    <button className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700">
-                        Update Account
+                    <button disabled={savingAccount} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-70">
+                        {savingAccount ? "Updating..." : "Update Account"}
                     </button>
                 </div>
             </form>
@@ -177,28 +264,28 @@ export default function Profile() {
                     <Input
                         label="Current Password"
                         type="password"
-                        value={form.current_password}
-                        onChange={(v) => handleChange("current_password", v)}
+                        value={passwordForm.current_password}
+                        onChange={(v) => handlePasswordChange("current_password", v)}
                     />
 
                     <Input
                         label="New Password"
                         type="password"
-                        value={form.new_password}
-                        onChange={(v) => handleChange("new_password", v)}
+                        value={passwordForm.new_password}
+                        onChange={(v) => handlePasswordChange("new_password", v)}
                     />
 
                     <Input
                         label="Confirm Password"
                         type="password"
-                        value={form.confirm_password}
-                        onChange={(v) => handleChange("confirm_password", v)}
+                        value={passwordForm.confirm_password}
+                        onChange={(v) => handlePasswordChange("confirm_password", v)}
                     />
                 </div>
 
                 <div className="mt-5 flex justify-end">
-                    <button className="rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white hover:bg-red-700">
-                        Update Password
+                    <button disabled={savingPassword} className="rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-70">
+                        {savingPassword ? "Updating..." : "Update Password"}
                     </button>
                 </div>
             </form>

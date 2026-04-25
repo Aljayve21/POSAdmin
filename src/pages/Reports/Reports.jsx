@@ -1,4 +1,4 @@
-import { paymentMethods, reportSales } from "../../data/mockData";
+import api from "../../api/axios";
 import {
     Bar,
     BarChart,
@@ -9,32 +9,70 @@ import {
     Tooltip,
     XAxis,
 } from "recharts";
+import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
 
-const COLORS = ["#6366F1", "#22C55E", "#F59E0B"];
+const COLORS = ["#6366F1", "#22C55E", "#F59E0B", "#0EA5E9"];
 
 export default function Reports() {
-    const totalSales = reportSales.reduce((sum, s) => sum + s.sales, 0);
-    const totalPayments = paymentMethods.reduce((sum, p) => sum + p.value, 0);
+    const [summary, setSummary] = useState({
+        totalSales: 0,
+        totalTransactions: 0,
+        totalCustomers: 0,
+        pendingUtang: 0,
+        completedCount: 0,
+        cancelledCount: 0,
+        refundedCount: 0,
+        paymentBreakdown: [],
+        paymentCollections: [],
+        monthlySales: [],
+    });
+    const [loading, setLoading] = useState(true);
 
-    const exportCSV = () => {
-        const rows = [
+    const fetchSummary = async () => {
+        try {
+            const res = await api.get("/reports/summary");
+            setSummary(res.data);
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to load reports");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        const loadData = async () => {
+            await fetchSummary();
+        };
+
+        loadData();
+    }, []);
+
+    const exportRows = useMemo(() => {
+        return [
+            ["Summary", "Value"],
+            ["Total Sales", summary.totalSales],
+            ["Transactions", summary.totalTransactions],
+            ["Customers", summary.totalCustomers],
+            ["Pending Utang", summary.pendingUtang],
+            [],
             ["Month", "Sales"],
-            ...reportSales.map((item) => [item.month, item.sales]),
+            ...summary.monthlySales.map((item) => [item.month, item.sales]),
             [],
             ["Payment Method", "Amount"],
-            ...paymentMethods.map((item) => [item.name, item.value]),
+            ...summary.paymentBreakdown.map((item) => [item.name, item.value]),
         ];
+    }, [summary]);
 
-        const csv = rows.map((row) => row.join(",")).join("\n");
-
+    const exportCSV = () => {
+        const csv = exportRows.map((row) => row.join(",")).join("\n");
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
-
         const link = document.createElement("a");
         link.href = url;
         link.download = `smart-pos-report-${Date.now()}.csv`;
         link.click();
-
         URL.revokeObjectURL(url);
     };
 
@@ -44,85 +82,38 @@ export default function Reports() {
         <head>
           <title>Smart POS Report</title>
           <style>
-            body {
-              font-family: Arial, sans-serif;
-              padding: 24px;
-              color: #111827;
-            }
-            h1 {
-              margin-bottom: 4px;
-            }
-            .muted {
-              color: #6b7280;
-              margin-bottom: 24px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 24px;
-            }
-            th, td {
-              border: 1px solid #e5e7eb;
-              padding: 10px;
-              text-align: left;
-            }
-            th {
-              background: #f3f4f6;
-            }
-            .summary {
-              margin-bottom: 24px;
-            }
+            body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
+            h1 { margin-bottom: 4px; }
+            .muted { color: #6b7280; margin-bottom: 24px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+            th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; }
+            th { background: #f3f4f6; }
           </style>
         </head>
         <body>
           <h1>Smart POS Report</h1>
           <p class="muted">Generated: ${new Date().toLocaleString()}</p>
-
-          <div class="summary">
-            <p><strong>Total Sales:</strong> ₱${totalSales.toLocaleString()}</p>
-            <p><strong>Total Payments:</strong> ₱${totalPayments.toLocaleString()}</p>
-          </div>
+          <p><strong>Total Sales:</strong> PHP ${Number(summary.totalSales || 0).toLocaleString()}</p>
+          <p><strong>Transactions:</strong> ${summary.totalTransactions}</p>
+          <p><strong>Customers:</strong> ${summary.totalCustomers}</p>
+          <p><strong>Pending Utang:</strong> PHP ${Number(summary.pendingUtang || 0).toLocaleString()}</p>
 
           <h2>Monthly Sales</h2>
           <table>
-            <thead>
-              <tr>
-                <th>Month</th>
-                <th>Sales</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Month</th><th>Sales</th></tr></thead>
             <tbody>
-              ${reportSales
-                .map(
-                    (item) => `
-                    <tr>
-                      <td>${item.month}</td>
-                      <td>₱${item.sales.toLocaleString()}</td>
-                    </tr>
-                  `
-                )
+              ${summary.monthlySales
+                .map((item) => `<tr><td>${item.month}</td><td>PHP ${Number(item.sales || 0).toLocaleString()}</td></tr>`)
                 .join("")}
             </tbody>
           </table>
 
           <h2>Payment Methods</h2>
           <table>
-            <thead>
-              <tr>
-                <th>Method</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Method</th><th>Amount</th></tr></thead>
             <tbody>
-              ${paymentMethods
-                .map(
-                    (item) => `
-                    <tr>
-                      <td>${item.name}</td>
-                      <td>₱${item.value.toLocaleString()}</td>
-                    </tr>
-                  `
-                )
+              ${summary.paymentBreakdown
+                .map((item) => `<tr><td>${item.name}</td><td>PHP ${Number(item.value || 0).toLocaleString()}</td></tr>`)
                 .join("")}
             </tbody>
           </table>
@@ -135,6 +126,10 @@ export default function Reports() {
         printWindow.document.close();
         printWindow.print();
     };
+
+    if (loading) {
+        return <p className="p-6 dark:text-white">Loading reports...</p>;
+    }
 
     return (
         <div className="space-y-4 sm:space-y-6">
@@ -163,10 +158,11 @@ export default function Reports() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Card title="Total Sales" value={`₱${totalSales.toLocaleString()}`} />
-                <Card title="Transactions" value="120" />
-                <Card title="Customers" value="45" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+                <Card title="Total Sales" value={`PHP ${Number(summary.totalSales || 0).toLocaleString()}`} />
+                <Card title="Transactions" value={summary.totalTransactions} />
+                <Card title="Customers" value={summary.totalCustomers} />
+                <Card title="Pending Utang" value={`PHP ${Number(summary.pendingUtang || 0).toLocaleString()}`} />
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -175,7 +171,7 @@ export default function Reports() {
 
                     <div className="h-[250px] w-full">
                         <ResponsiveContainer>
-                            <BarChart data={reportSales}>
+                            <BarChart data={summary.monthlySales}>
                                 <XAxis dataKey="month" />
                                 <Tooltip />
                                 <Bar dataKey="sales" fill="#6366F1" radius={[6, 6, 0, 0]} />
@@ -185,18 +181,18 @@ export default function Reports() {
                 </div>
 
                 <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 className="mb-3 font-bold dark:text-white">Payment Methods</h2>
+                    <h2 className="mb-3 font-bold dark:text-white">Sales by Payment Method</h2>
 
                     <div className="h-[250px] w-full">
                         <ResponsiveContainer>
                             <PieChart>
                                 <Pie
-                                    data={paymentMethods}
+                                    data={summary.paymentBreakdown}
                                     dataKey="value"
                                     nameKey="name"
                                     outerRadius={80}
                                 >
-                                    {paymentMethods.map((entry, index) => (
+                                    {summary.paymentBreakdown.map((entry, index) => (
                                         <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
@@ -205,6 +201,12 @@ export default function Reports() {
                         </ResponsiveContainer>
                     </div>
                 </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Card title="Completed" value={summary.completedCount} />
+                <Card title="Cancelled" value={summary.cancelledCount} />
+                <Card title="Refunded" value={summary.refundedCount} />
             </div>
 
             <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -220,10 +222,10 @@ export default function Reports() {
                         </thead>
 
                         <tbody>
-                            {reportSales.map((item) => (
-                                <tr key={item.month} className="border-b dark:border-slate-800">
-                                    <td className="py-2">{item.month}</td>
-                                    <td>₱{item.sales.toLocaleString()}</td>
+                            {summary.monthlySales.map((item) => (
+                                <tr key={item.monthNumber} className="border-b dark:border-slate-800">
+                                    <td className="py-2 dark:text-white">{item.month}</td>
+                                    <td className="dark:text-slate-300">PHP {Number(item.sales || 0).toLocaleString()}</td>
                                 </tr>
                             ))}
                         </tbody>
