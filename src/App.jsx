@@ -9,6 +9,7 @@ import Payments from "./pages/Payments/Payments";
 import Reports from "./pages/Reports/Reports";
 import Profile from "./pages/Profile/Profile";
 import { Toaster } from "react-hot-toast";
+import Utang from "./pages/Utang/Utang";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="inventory" element={<Inventory />} />
             <Route path="customers" element={<Customers />} />
             <Route path="sales" element={<Sales />} />
+            <Route path="utang" element={<Utang />} />
             <Route path="payments" element={<Payments />} />
             <Route path="reports" element={<Reports />} />
             <Route path="profile" element={<Profile />} />
